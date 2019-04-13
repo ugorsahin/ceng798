@@ -1,7 +1,6 @@
 import Data.List
-import Control.Monad (when)
 
-data Complex = Complex Float Float
+data Complex = Complex Double Double
 data Qubit = Qubit {_0 :: Complex, _1 :: Complex}
 
 instance Num Complex where
@@ -13,25 +12,32 @@ instance Num Complex where
     fromInteger a = Complex (fromIntegral a) 0.0
 
 instance Show Complex where
-    show (Complex i j) = show(i) ++ " " ++ show(j) ++ "i"
+    show (Complex i j)
+        | i == 0 && j == 0 = "NP"
+        | i == 0 = show(j) ++ "i"
+        | j == 0 = show(i)
+        | otherwise = show(i) ++ " " ++ show(j) ++ "i"
 
 instance Show Qubit where
-    show (Qubit zero one) = "Current State: (" ++ show zero ++ ")|0> (" ++ show one ++ ")|1>"
+    show (Qubit zero one)
+        | (show zero) == "NP" = "Current State: (" ++ show one ++ ")|1>"
+        | (show one) == "NP"  = "Current State: (" ++ show zero ++ ")|0>"
+        | otherwise           = "Current State: (" ++ show zero ++ ")|0> (" ++ show one ++ ")|1>"
 
-power :: Complex -> Float -> Complex
+power :: Complex -> Double -> Complex
 power (Complex i j) k = Complex (i**k - j ** k) (i * j * 2)
 
-mag :: Complex -> Float
+mag :: Complex -> Double
 mag (Complex i j) = i**2 + j**2 
 
 measure :: Qubit -> String
 measure (Qubit zero one) = "Probability of |0> : " ++ show(mag(zero)) ++ " and |1> of " ++ show(mag(one))
 
-makeComp :: (Float, Float) -> Complex
+makeComp :: (Double, Double) -> Complex
 makeComp (i, j) = Complex i j 
 
 isItValid :: [Complex] -> Bool
-isItValid [c1,c2] = (mag c1 + mag c2 == 1.0)
+isItValid [c1,c2] = (mag c1 + mag c2) > 0.9995 && (mag c1 + mag c2) < 1.0005
 isItValid _ = False
 
 c2Qubit :: [Complex] -> Qubit
@@ -74,10 +80,10 @@ doesItHave a (x:xs)
     | otherwise = doesItHave a xs
 doesItHave a [] = False
 
-makeFloat :: String -> Float
-makeFloat a = read a :: Float
+makeDouble :: String -> Double
+makeDouble a = read a :: Double
 
-parseComplex :: (Float, Float) -> Complex
+parseComplex :: (Double, Double) -> Complex
 parseComplex (a,b) = Complex a b
 
 parseStr :: String -> String -> [String]
@@ -86,30 +92,31 @@ parseStr (x:xs) temp
     | otherwise = parseStr xs (temp ++ [x])
 parseStr [] temp = [temp]
 
-parseNum :: String -> [Float] -> String -> (Float, Float)
-parseNum strtemp numtemp [] = (makeFloat strtemp, makeFloat "0")
+parseIValue :: String -> Double
+parseIValue []   = 1.0
+parseIValue "-"  = -1.0
+parseIValue a    = makeDouble a
+
+parseNum :: String -> [Double] -> String -> (Double, Double)
+parseNum strtemp numtemp [] = (makeDouble strtemp, makeDouble "0")
 parseNum strtemp numtemp (x:xs)
-    | x == 'i' && nonumber && noreal && minus  = parseNum "-1" [0.0] []
-    | x == 'i' && nonumber && noreal           = parseNum "1"  [0.0] []
-    | x == 'i' && nonumber                     = parseNum "1"  numtemp []
-    | x == 'i' && noreal                       = parseNum "1"  [0.0] []
+    | x == 'i' && real                         = (numtemp !! 0  , parseIValue strtemp)
+    | x == 'i'                                 = (makeDouble "0", parseIValue strtemp)
     | doesItHave x "0123456789."               = parseNum (strtemp ++ [x]) numtemp  xs
-    | doesItHave x "-" && (length strtemp) > 0 = parseNum [x] (numtemp ++ [makeFloat strtemp]) xs
+    | doesItHave x "-" && (length strtemp) > 0 = parseNum [x] (numtemp ++ [makeDouble strtemp]) xs
     | doesItHave x "-"                         = parseNum [x] numtemp xs
-    | doesItHave x "+" && (length strtemp) > 0 = parseNum [] (numtemp ++ [makeFloat strtemp]) xs
+    | doesItHave x "+" && (length strtemp) > 0 = parseNum [] (numtemp ++ [makeDouble strtemp]) xs
     | doesItHave x "+"                         = parseNum [] numtemp xs
     | otherwise                                = parseNum strtemp numtemp xs
     where
-        noreal   = (length numtemp) > 0
-        nonumber = (length strtemp) == 0
-        minus    = (length strtemp) == 1 && strtemp == "-"
+        real   = (length numtemp) > 0
 
 
 makeQubit n = c2Qubit $ map parseComplex $ map (parseNum [] []) (parseStr n [])
 
 -- take_inp :: Maybe Qubit
 take_inp = do
-    putStrLn "Enter the amplitudes of the initial state:"
+    putStrLn "Enter the amplitudes of the initial state: "
     n <- getLine
     let check = isItValid $ map parseComplex (map (parseNum [] []) (parseStr n []))
     case check of
@@ -119,19 +126,25 @@ take_inp = do
         True -> do
             return $ Just $ makeQubit n
 
+inLoop qubit = do
+    putStrLn "Do you wish to continue (Y/N)? "
+    exit_ <- getLine
+    case exit_ of
+        "Y" -> main
+        "N" -> return ()
+        _ -> do
+            putStrLn "This is not what i expected!"
+            inLoop qubit
+
 state qubit = do
     putStrLn $ show qubit
-    putStrLn $ "Enter the transformation:"
+    putStrLn $ "Enter the transformation: "
     action <- getLine
 
     case action of
         "M" -> do 
             putStrLn $ measure $ qubit
-            putStrLn "Do you wish to continue (Y/N)?"
-            exit_ <- getLine
-            case exit_ of
-                "Y" -> return (Just qubit)
-                "N" -> return Nothing
+            inLoop qubit
         "H" -> do
             state $ hadamard qubit
         "X" -> do 
@@ -146,46 +159,5 @@ state qubit = do
 
 main = do
     Just qubit <- take_inp
-    Just qubit <- state qubit
-    putStrLn $ show qubit
--- main = do
---     Just qubit <- take_inp
---     putStrLn $ show qubit
---     putStrLn $ "Enter the transformation:"
---     action <- getLine
-
---     case action of
---         "M" -> do 
---             putStrLn $ measure $ qubit
---             putStrLn "Do you wish to continue (Y/N)?"
---             exit_ <- getLine
---             case exit of
---                 "Y" -> return (Just qubit)
---                 "N" -> return Nothing
---         "X" -> do 
---             qubit <- x_trans qubit
---         "Y" -> do
---             qubit <- y_trans qubit
---         "Z" -> do
---             qubit <- z_trans qubit
---         return (Just qubit)
-
-
--- main = do
---     let validloop = do 
---         putStrLn "Enter the amplitudes of the initial state:"
---         let check = isItValid $ map parseComplex (map (parseNum [] []) (parseStr n []))
---         if check == False 
---             then putStrLn "The vector is not normalized!"
---             else return (c2Qubit $ map parseComplex (map (parseNum [] []) (parseStr n [])))
-
---     loop validloop
---     let qubit = c2Qubit $ map parseComplex (map (parseNum [] []) (parseStr n []))
---     inp <- getLine
-
---     unless (inp == "M") $ do
---         let qubit = case inp of
---                 "X" -> x_trans qubit
---                 "Y" -> y_trans qubit
---                 "Z" -> z_trans qubit
---         putStrLn (show qubit)
+    state qubit
+    
